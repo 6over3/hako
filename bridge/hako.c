@@ -962,22 +962,31 @@ LEPUS_BOOL WASM_EXPORT(HAKO_IsJobPending)(LEPUSRuntime* rt) {
 }
 
 LEPUSValue* WASM_EXPORT(HAKO_ExecutePendingJob)(LEPUSRuntime* rt,
-                                                int maxJobsToExecute,
-                                                LEPUSContext** lastJobContext) {
-  LEPUSContext* pctx;
-  int status = 1;
-  int executed = 0;
-  while (executed != maxJobsToExecute && status == 1) {
-    status = LEPUS_ExecutePendingJob(rt, &pctx);
-    if (status == -1) {
-      *lastJobContext = pctx;
-      return jsvalue_to_heap_rt(rt, LEPUS_GetException(pctx));
-    } else if (status == 1) {
-      *lastJobContext = pctx;
-      executed++;
+                                                 int maxJobsToExecute,
+                                                 LEPUSContext** lastJobContext) {
+    LEPUSContext* pctx = NULL;
+    int status = 1;
+    int executed = 0;
+    
+    while (executed != maxJobsToExecute && status == 1) {
+        status = LEPUS_ExecutePendingJob(rt, &pctx);
+        
+        if (status == -1) {
+            *lastJobContext = pctx;
+            if (pctx == NULL) {
+                return NULL;
+            }
+            return jsvalue_to_heap_rt(rt, LEPUS_GetException(pctx));
+        } else if (status == 1) {
+            *lastJobContext = pctx;
+            executed++;
+        }
     }
-  }
-  return jsvalue_to_heap_rt(rt, LEPUS_NewFloat64(pctx, executed));
+    
+    if (pctx == NULL) {
+        return NULL;
+    }
+    return jsvalue_to_heap_rt(rt, LEPUS_NewFloat64(pctx, executed));
 }
 
 LEPUSValue* WASM_EXPORT(HAKO_GetProp)(LEPUSContext* ctx,
@@ -1056,6 +1065,7 @@ static inline bool __JS_AtomIsTaggedInt(LEPUSAtom v) {
 static inline uint32_t __JS_AtomToUInt32(LEPUSAtom atom) {
   return atom & ~LEPUS_ATOM_TAG_INT;
 }
+
 
 LEPUSValue* WASM_EXPORT(HAKO_GetOwnPropertyNames)(LEPUSContext* ctx,
                                                   LEPUSValue*** out_ptrs,
@@ -1382,19 +1392,13 @@ uint64_t WASM_EXPORT(HAKO_GetPrimjsVersion)() {
 
 // Module loading helpers
 
-// C -> Host Callbacks
-LEPUSValue* hako_host_call_function(LEPUSContext* ctx,
-                                    LEPUSValueConst* this_ptr, int argc,
-                                    LEPUSValueConst* argv,
-                                    uint32_t magic_func_id) {
-  return host_call_function(ctx, this_ptr, argc, argv, magic_func_id);
-}
+
 
 // Function: PrimJS -> C
 LEPUSValue hako_call_function(LEPUSContext* ctx, LEPUSValueConst this_val,
                               int argc, LEPUSValueConst* argv, int magic) {
   LEPUSValue* result_ptr =
-      hako_host_call_function(ctx, &this_val, argc, argv, magic);
+      host_call_function(ctx, &this_val, argc, argv, magic);
   if (result_ptr == NULL) {
     return LEPUS_UNDEFINED;
   }
@@ -1605,15 +1609,6 @@ LEPUSValue* WASM_EXPORT(HAKO_ToJson)(LEPUSContext* ctx, LEPUSValueConst* val,
   return jsvalue_to_heap(ctx, result);
 }
 
-LEPUSValue* WASM_EXPORT(HAKO_ParseJson)(LEPUSContext* ctx, CString* json, size_t buf_len,
-                           CString* filename) {
-  if (!json) {
-    return jsvalue_to_heap(ctx,
-                    LEPUS_ThrowTypeError(ctx, "Invalid JSON string"));
-  }
-  return jsvalue_to_heap(ctx, LEPUS_ExtParseJSON(ctx, json, buf_len, filename));
-}
-
 LEPUS_BOOL WASM_EXPORT(HAKO_IsError)(LEPUSContext* ctx, LEPUSValueConst* val) {
   return LEPUS_IsError(ctx, *val);
 }
@@ -1747,13 +1742,11 @@ LEPUSValue* WASM_EXPORT(HAKO_EvalByteCode)(LEPUSContext* ctx,
   return jsvalue_to_heap(ctx, eval_result);
 }
 
-static int hako_module_init_wrapper(LEPUSContext* ctx, LEPUSModuleDef* m) {
-  return host_module_init(ctx, m);
-}
+
 
 LEPUSModuleDef* WASM_EXPORT(HAKO_NewCModule)(LEPUSContext* ctx,
                                              CString* name_str) {
-  return LEPUS_NewCModule(ctx, name_str, hako_module_init_wrapper);
+  return LEPUS_NewCModule(ctx, name_str, host_module_init);
 }
 
 int WASM_EXPORT(HAKO_AddModuleExport)(LEPUSContext* ctx, LEPUSModuleDef* m,

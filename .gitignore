@@ -14,3 +14,4 @@ obj
 bin
 tools/third-party
 build
+.cache/clangd
